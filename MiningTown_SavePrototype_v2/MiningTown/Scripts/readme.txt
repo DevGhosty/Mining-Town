@@ -1,0 +1,3 @@
+Mining Town stores the player's wood, Honor, position, and all the current status of map in a local JSON file. Players open the menu by pressing M and use save or load their progress. Repaired buildings and the bridge stay repaired after loading the saved file. Collected wood does not reappear. The bridge's saved state also determines whether the player can cross the river. Players can export a saved-game JSON file and import it. This allows them to continue restoring and exploring the town without starting over.
+
+The two .cs scripts that handles saving and loading are SaveRepository.cs SaveManager.cs SaveData.cs and UnitySaveJsonCodec.cs
