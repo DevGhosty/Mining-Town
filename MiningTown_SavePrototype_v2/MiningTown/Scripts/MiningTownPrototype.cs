@@ -29,6 +29,7 @@ namespace MiningTown
         private GUIStyle titleStyle, headingStyle, textStyle, smallStyle, buttonStyle, tagStyle;
         private SaveData completedDemoState;
         private bool menuOpen;
+        private bool mapOpen;
         private Vector2 pointer;
         private bool pointerReleased;
         private Action pendingAction;
@@ -169,6 +170,16 @@ namespace MiningTown
                 if (PrototypeInput.SkipCutscenePressed()) FinishOpening();
                 else if (PrototypeInput.InteractPressed() || Time.unscaledTime - openingStartedAt >= OpeningShotDuration)
                     AdvanceOpening();
+                return;
+            }
+            if (!menuOpen && PrototypeInput.MapPressed())
+            {
+                mapOpen = !mapOpen;
+                return;
+            }
+            if (mapOpen)
+            {
+                if (PrototypeInput.SkipCutscenePressed()) mapOpen = false;
                 return;
             }
             if (PrototypeInput.MenuPressed())
@@ -672,7 +683,8 @@ namespace MiningTown
                 Styles();
                 DrawWorldLabels();
                 DrawHud();
-                if (menuOpen) DrawMenu();
+                if (mapOpen) DrawExpandedMap();
+                else if (menuOpen) DrawMenu();
                 if (pendingAction != null) DrawConfirmation();
             }
             GUI.enabled = true;
@@ -711,15 +723,20 @@ namespace MiningTown
             GUI.Label(new Rect(36, 98, 305, 24), "Houses " + saves.State.repairedBuildingIds.Count + "/4    Bridge: "
                 + (saves.State.bridgeRepaired ? "OPEN" : "BROKEN"), smallStyle);
             Panel(new Rect(370, 20, 640, 50), new Color(0.07f, 0.13f, 0.15f, 0.94f));
-            GUI.Label(new Rect(388, 31, 610, 32), "Move  WASD / Arrows     Interact  E     Menu  M", textStyle);
-            GUI.enabled = pendingAction == null;
+            GUI.Label(new Rect(388, 31, 610, 32), "Move  WASD / Arrows     Interact  E     Menu  M     Map  N", textStyle);
+            GUI.enabled = pendingAction == null && !mapOpen;
             if (Button(new Rect(840, 82, 170, 36), menuOpen ? "Close Menu [M]" : "Menu [M]")) menuOpen = !menuOpen;
-            DrawMiniMap();
+            if (!mapOpen)
+            {
+                GUI.enabled = !menuOpen && pendingAction == null;
+                DrawTownMap(new Rect(1030, 20, 230, 232));
+                GUI.enabled = true;
+            }
             Panel(new Rect(20, 575, 1240, 125), new Color(0.07f, 0.13f, 0.15f, 0.96f));
             GUI.Label(new Rect(38, 585, 1190, 28), DemoObjective(), headingStyle);
             Target target = NearestTarget();
             GUI.Label(new Rect(38, 618, 1035, 30), target.Prompt, textStyle);
-            GUI.enabled = !menuOpen && pendingAction == null;
+            GUI.enabled = !mapOpen && !menuOpen && pendingAction == null;
             if (!String.IsNullOrEmpty(target.Kind) && Button(new Rect(1094, 619, 144, 33), "Interact [E]")) Interact();
             GUI.Label(new Rect(38, 654, 1190, 40), saves.Status, smallStyle);
             GUI.enabled = true;
@@ -791,12 +808,22 @@ namespace MiningTown
             GUI.Label(rect, caption, tagStyle);
         }
 
-        private void DrawMiniMap()
+        private void DrawExpandedMap()
         {
-            Rect box = new Rect(1030, 20, 230, 232);
+            Panel(new Rect(0, 0, 1280, 720), new Color(0, 0, 0, 0.58f));
+            DrawTownMap(new Rect(385, 47, 510, 590), true);
+            if (Button(new Rect(535, 653, 210, 42), "Close map [N]")) mapOpen = false;
+        }
+
+        private void DrawTownMap(Rect box, bool expanded = false)
+        {
             Panel(box, new Color(0.07f, 0.13f, 0.15f, 0.96f));
-            GUI.Label(new Rect(1042, 26, 210, 24), "TOWN MAP                 N", smallStyle);
-            Rect map = new Rect(1044, 56, 202, 144);
+            if (expanded)
+                GUI.Label(new Rect(box.x + 12, box.y + 6, box.width - 70, 26), "TOWN MAP", headingStyle);
+            else if (Button(new Rect(box.x + 12, box.y + 6, 154, 26), "Town map [N]"))
+                mapOpen = true;
+            GUI.Label(new Rect(box.xMax - 52, box.y + 6, 42, 26), "North", smallStyle);
+            Rect map = new Rect(box.x + 14, box.y + 36, box.width - 28, box.height - 88);
             Panel(map, new Color(0.27f, 0.36f, 0.29f));
             Vector2 south = MiniPoint(map, WorldLayout.MinX, WorldLayout.RiverSouth);
             Vector2 north = MiniPoint(map, WorldLayout.MaxX, WorldLayout.RiverNorth);
@@ -833,7 +860,8 @@ namespace MiningTown
             }
             Vector2 playerPoint = MiniPoint(map, player.position.x, player.position.z);
             Panel(new Rect(playerPoint.x - 3, playerPoint.y - 3, 6, 6), Color.white);
-            GUI.Label(new Rect(1042, 202, 210, 42), "White: you   Gold dots: wood\nTeal outline: objective", smallStyle);
+            GUI.Label(new Rect(box.x + 12, map.yMax + 2, box.width - 24, 42),
+                "White: you   Gold dots: wood\nTeal outline: objective", expanded ? textStyle : smallStyle);
         }
 
         private Vector2 MiniPoint(Rect map, float x, float z)

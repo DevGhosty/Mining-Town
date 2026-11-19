@@ -48,6 +48,17 @@ namespace MiningTown
 #endif
         }
 
+        public static bool MapPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.nKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.N);
+#else
+            return false;
+#endif
+        }
+
         public static bool SkipCutscenePressed()
         {
 #if ENABLE_INPUT_SYSTEM
