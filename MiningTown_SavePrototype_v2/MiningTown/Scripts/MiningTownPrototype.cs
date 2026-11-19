@@ -136,6 +136,7 @@ namespace MiningTown
             saves = GetComponent<SaveManager>();
             if (!editable) BuildWorld();
             FindRoads();
+            ApplyCainosArt();
             saves.StateChanged += RefreshWorld;
             RefreshWorld();
             SnapCamera();
@@ -560,6 +561,7 @@ namespace MiningTown
             }
             Shape("Chimney", PrimitiveType.Cube, new Vector3(0.8f, 3.1f, 0.5f), new Vector3(0.45f, 1, 0.5f), stone, root.transform);
             Shape("Front trim", PrimitiveType.Cube, new Vector3(0, 2.2f, -1.42f), new Vector3(3, 0.14f, 0.12f), cream, restored.transform);
+            if (definition.Id == "workshop") BuildWorkshopFront(root.transform, damaged.transform, restored.transform);
         }
 
         private void BuildResources()
@@ -583,10 +585,12 @@ namespace MiningTown
         {
             brokenBridge = Group("Broken bridge");
             fixedBridge = Group("Restored bridge");
+            Material lighterBridgePlank = Colored(new Color(0.56f, 0.38f, 0.23f));
             for (int i = 0; i <= 12; i++)
             {
                 float z = 17.8f + i * 0.45f;
-                Shape("Bridge plank", PrimitiveType.Cube, new Vector3(WorldLayout.BridgeX, 0.12f, z), new Vector3(3.8f, 0.18f, 0.41f), timber, fixedBridge.transform);
+                Shape("Bridge plank", PrimitiveType.Cube, new Vector3(WorldLayout.BridgeX, 0.12f, z),
+                    new Vector3(3.8f, 0.18f, 0.43f), i % 3 == 0 ? lighterBridgePlank : timber, fixedBridge.transform);
                 if (i < 2 || i > 10)
                 {
                     GameObject piece = Shape("Broken deck", PrimitiveType.Cube, new Vector3(WorldLayout.BridgeX, 0.1f, z), new Vector3(3.4f, 0.15f, 0.35f), timber, brokenBridge.transform);
