@@ -4,6 +4,9 @@ namespace MiningTown
 {
     public sealed partial class MiningTownPrototype
     {
+        // The atlas lists each idle/walk pair in this order.
+        private enum ExplorerFacing { South, North, East, West }
+
         private const int ExplorerFrameSize = 32;
         private const int ExplorerWalkFrames = 6;
         private const int ExplorerIdleFrames = 2;
@@ -11,7 +14,7 @@ namespace MiningTown
         private readonly Sprite[,] explorerFrames = new Sprite[8, ExplorerWalkFrames];
         private SpriteRenderer explorerRenderer;
         private Vector3 previousPlayerPosition;
-        private int explorerDirection;
+        private ExplorerFacing explorerDirection;
         private bool explorerWalking;
         private float explorerAnimationTime;
 
@@ -62,11 +65,15 @@ namespace MiningTown
             explorerAnimationTime += Time.deltaTime;
 
             if (walking)
-                explorerDirection = Mathf.Abs(displacement.z) > Mathf.Abs(displacement.x)
-                    ? (displacement.z > 0f ? 1 : 0)
-                    : (displacement.x < 0f ? 2 : 3);
+            {
+                // Treat nearly equal axes as horizontal so diagonal steps keep one facing.
+                bool horizontal = Mathf.Abs(displacement.x) >= Mathf.Abs(displacement.z) * 0.9f;
+                explorerDirection = horizontal
+                    ? (displacement.x < 0f ? ExplorerFacing.West : ExplorerFacing.East)
+                    : (displacement.z < 0f ? ExplorerFacing.South : ExplorerFacing.North);
+            }
 
-            int row = explorerDirection * 2 + (walking ? 1 : 0);
+            int row = (int)explorerDirection * 2 + (walking ? 1 : 0);
             int frameCount = walking ? ExplorerWalkFrames : ExplorerIdleFrames;
             int frame = Mathf.FloorToInt(explorerAnimationTime * (walking ? 10f : 2f)) % frameCount;
             explorerRenderer.sprite = explorerFrames[row, frame];
