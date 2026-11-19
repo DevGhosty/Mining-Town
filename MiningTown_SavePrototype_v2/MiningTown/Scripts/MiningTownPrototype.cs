@@ -140,6 +140,7 @@ namespace MiningTown
             saves.StateChanged += RefreshWorld;
             RefreshWorld();
             SnapCamera();
+            ApplyExplorerArt();
             if (sceneCamera != null)
             {
                 gameplayCameraSize = sceneCamera.orthographicSize;
@@ -300,6 +301,7 @@ namespace MiningTown
         private void LateUpdate()
         {
             if (sceneCamera == null || player == null) return;
+            UpdateExplorerArt();
             if (openingActive)
             {
                 FrameOpening();
@@ -911,6 +913,7 @@ namespace MiningTown
         {
             if (saves != null) { saves.StateChanged -= RefreshWorld; WorldLayout.ResetLayout(); }
             if (!Application.isPlaying) return;
+            DestroyExplorerFrames();
             foreach (Material material in materials) if (material != null) Destroy(material);
         }
     }
