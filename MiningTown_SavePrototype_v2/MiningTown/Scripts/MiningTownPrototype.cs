@@ -34,6 +34,25 @@ namespace MiningTown
         private Action pendingAction;
         private string pendingTitle;
         private static readonly Vector3 CameraOffset = new Vector3(0, 18f, -15f);
+        private const float OpeningShotDuration = 8f;
+        private float openingStartedAt;
+        private float gameplayCameraSize;
+        private int openingShot;
+        private bool openingActive;
+        private GUIStyle openingTitleStyle, openingCaptionStyle, openingButtonStyle;
+        private AudioSource introMusic, forestAmbience, restoredTownMusic;
+
+        private static readonly string[] OpeningTitles =
+        {
+            "The mountain trail", "A town in the valley", "The first crossing"
+        };
+
+        private static readonly string[] OpeningCaptions =
+        {
+            "You set out through the mountains. By dusk, the trail is gone and you can no longer find your way back.",
+            "Below the trees, you find an old mining town. The mine has closed, but a few families still call this valley home.",
+            "The bridge is broken. If you can gather enough wood to mend it, the town will have its crossing back."
+        };
 
         [Serializable]
         private sealed class HouseView
@@ -118,10 +137,26 @@ namespace MiningTown
             saves.StateChanged += RefreshWorld;
             RefreshWorld();
             SnapCamera();
+            if (sceneCamera != null)
+            {
+                gameplayCameraSize = sceneCamera.orthographicSize;
+                openingStartedAt = Time.unscaledTime;
+                openingActive = true;
+                FrameOpening();
+            }
+            introMusic = CreateSoundtrackSource("Windswept", false);
+            forestAmbience = CreateSoundtrackSource("ForestAmbience", true);
+            restoredTownMusic = CreateSoundtrackSource("ASmallFireWillDo", true);
+            if (openingActive && introMusic != null)
+            {
+                introMusic.volume = 0.32f;
+                introMusic.Play();
+            }
         }
 
         private void Update()
         {
+            UpdateSoundtrack();
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
             Vector2 screenPoint;
             pointerReleased = PrototypeInput.PointerReleased(out screenPoint);
@@ -129,6 +164,13 @@ namespace MiningTown
                 (Screen.height - screenPoint.y) * 720f / Screen.height);
 #endif
             if (player == null) return;
+            if (openingActive)
+            {
+                if (PrototypeInput.SkipCutscenePressed()) FinishOpening();
+                else if (PrototypeInput.InteractPressed() || Time.unscaledTime - openingStartedAt >= OpeningShotDuration)
+                    AdvanceOpening();
+                return;
+            }
             if (PrototypeInput.MenuPressed())
             {
                 menuOpen = !menuOpen;
@@ -150,6 +192,38 @@ namespace MiningTown
             }
             player.position = StatePosition();
             if (PrototypeInput.InteractPressed()) Interact();
+        }
+
+        private AudioSource CreateSoundtrackSource(string clipName, bool loop)
+        {
+            var clip = Resources.Load<AudioClip>("MiningTownAudio/" + clipName);
+            if (clip == null) return null;
+
+            var source = gameObject.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.clip = clip;
+            source.loop = loop;
+            source.volume = 0f;
+            return source;
+        }
+
+        private void UpdateSoundtrack()
+        {
+            if (openingActive) return;
+
+            bool townRestored = saves.State.bridgeRepaired || saves.State.repairedBuildingIds.Count > 0;
+            FadeSoundtrack(introMusic, 0f);
+            FadeSoundtrack(forestAmbience, townRestored ? 0.12f : 0.24f);
+            FadeSoundtrack(restoredTownMusic, townRestored ? 0.30f : 0f);
+        }
+
+        private static void FadeSoundtrack(AudioSource source, float targetVolume)
+        {
+            if (source == null) return;
+
+            if (targetVolume > 0f && !source.isPlaying) source.Play();
+            source.volume = Mathf.MoveTowards(source.volume, targetVolume, Time.unscaledDeltaTime * 0.22f);
+            if (source.volume == 0f && targetVolume == 0f && source.isPlaying) source.Stop();
         }
 
         private static bool IsOriginalRoad(string objectName)
@@ -197,9 +271,56 @@ namespace MiningTown
         private void LateUpdate()
         {
             if (sceneCamera == null || player == null) return;
+            if (openingActive)
+            {
+                FrameOpening();
+                return;
+            }
             Vector3 target = new Vector3(player.position.x, 0, player.position.z) + CameraOffset;
             sceneCamera.transform.position = Vector3.Lerp(sceneCamera.transform.position, target,
                 1f - Mathf.Exp(-9f * Time.deltaTime));
+        }
+
+        private void AdvanceOpening()
+        {
+            if (openingShot == OpeningCaptions.Length - 1)
+            {
+                FinishOpening();
+                return;
+            }
+
+            openingShot++;
+            openingStartedAt = Time.unscaledTime;
+        }
+
+        private void FinishOpening()
+        {
+            openingActive = false;
+            sceneCamera.orthographicSize = gameplayCameraSize;
+            SnapCamera();
+        }
+
+        private void FrameOpening()
+        {
+            float progress = Mathf.SmoothStep(0f, 1f, (Time.unscaledTime - openingStartedAt) / OpeningShotDuration);
+            Vector3 focus;
+            switch (openingShot)
+            {
+                case 0:
+                    focus = new Vector3(Mathf.Lerp(-14f, -11f, progress), 0, Mathf.Lerp(-11f, -8f, progress));
+                    sceneCamera.orthographicSize = gameplayCameraSize * 0.8f;
+                    break;
+                case 1:
+                    focus = new Vector3(Mathf.Lerp(-6f, 3f, progress), 0, 0);
+                    sceneCamera.orthographicSize = gameplayCameraSize * 1.35f;
+                    break;
+                default:
+                    focus = new Vector3(WorldLayout.BridgeX - 2f, 0,
+                        Mathf.Lerp(WorldLayout.BridgeApproachZ, WorldLayout.RiverNorth, progress));
+                    sceneCamera.orthographicSize = gameplayCameraSize;
+                    break;
+            }
+            sceneCamera.transform.position = focus + CameraOffset;
         }
 
         private Vector3 StatePosition()
@@ -524,31 +645,60 @@ namespace MiningTown
             GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = old;
         }
 
-        private bool Button(Rect rect, string caption)
+        private bool Button(Rect rect, string caption, GUIStyle style = null)
         {
+            style = style ?? buttonStyle;
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
-            GUI.Box(rect, caption, buttonStyle);
+            GUI.Box(rect, caption, style);
             if (GUI.enabled && pointerReleased && Event.current.type == EventType.Repaint && rect.Contains(pointer))
             { pointerReleased = false; return true; }
             return false;
 #else
-            return GUI.Button(rect, caption, buttonStyle);
+            return GUI.Button(rect, caption, style);
 #endif
         }
 
         private void OnGUI()
         {
             if (saves == null || player == null) return;
-            Styles();
             Matrix4x4 oldMatrix = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity,
                 new Vector3(Screen.width / 1280f, Screen.height / 720f, 1));
-            DrawWorldLabels();
-            DrawHud();
-            if (menuOpen) DrawMenu();
-            if (pendingAction != null) DrawConfirmation();
+            if (openingActive) DrawOpening();
+            else
+            {
+                Styles();
+                DrawWorldLabels();
+                DrawHud();
+                if (menuOpen) DrawMenu();
+                if (pendingAction != null) DrawConfirmation();
+            }
             GUI.enabled = true;
             GUI.matrix = oldMatrix;
+        }
+
+        private void DrawOpening()
+        {
+            if (openingTitleStyle == null)
+            {
+                openingTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold };
+                openingTitleStyle.normal.textColor = new Color(0.97f, 0.75f, 0.38f);
+                openingCaptionStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, wordWrap = true };
+                openingCaptionStyle.normal.textColor = new Color(0.93f, 0.94f, 0.90f);
+                openingButtonStyle = new GUIStyle(GUI.skin.button) { fontSize = 16 };
+            }
+
+            Color background = new Color(0.05f, 0.09f, 0.10f, 0.97f);
+            Panel(new Rect(0, 0, 1280, 56), background);
+            GUI.Label(new Rect(32, 12, 350, 32), "Mining Town", openingCaptionStyle);
+            Panel(new Rect(0, 552, 1280, 168), background);
+            GUI.Label(new Rect(32, 566, 820, 38), OpeningTitles[openingShot], openingTitleStyle);
+            GUI.Label(new Rect(32, 612, 835, 82), OpeningCaptions[openingShot], openingCaptionStyle);
+            string next = openingShot == OpeningCaptions.Length - 1 ? "Enter town [E]" : "Continue [E]";
+            bool advance = Button(new Rect(920, 631, 158, 42), next, openingButtonStyle);
+            bool skip = Button(new Rect(1090, 631, 158, 42), "Skip intro [Esc]", openingButtonStyle);
+            if (skip) FinishOpening();
+            else if (advance) AdvanceOpening();
         }
 
         private void DrawHud()

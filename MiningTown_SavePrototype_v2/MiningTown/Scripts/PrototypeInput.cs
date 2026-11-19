@@ -48,6 +48,17 @@ namespace MiningTown
 #endif
         }
 
+        public static bool SkipCutscenePressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.Escape);
+#else
+            return false;
+#endif
+        }
+
         // IMGUI does not receive pointer events with the new input backend alone.
         // The demo draws the UI with IMGUI, but reads those clicks explicitly.
         public static bool PointerReleased(out Vector2 position)
