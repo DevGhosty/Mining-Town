@@ -7,7 +7,7 @@ namespace MiningTown
     [DefaultExecutionOrder(-100)]
     [RequireComponent(typeof(SaveManager))]
     [DisallowMultipleComponent]
-    public sealed class MiningTownPrototype : MonoBehaviour
+    public sealed partial class MiningTownPrototype : MonoBehaviour
     {
         public Material worldMaterial;
         [SerializeField, Range(1f, 2f)] private float roadSpeedMultiplier = 1.2f;
@@ -27,7 +27,6 @@ namespace MiningTown
         [SerializeField, HideInInspector] private GameObject brokenBridge, fixedBridge;
         private Material timber, slate, gold, cream, foliage, stone, damagedWall;
         private GUIStyle titleStyle, headingStyle, textStyle, smallStyle, buttonStyle, tagStyle;
-        private SaveData completedDemoState;
         private bool menuOpen;
         private bool mapOpen;
         private Vector2 pointer;
@@ -42,6 +41,8 @@ namespace MiningTown
         private bool openingActive;
         private GUIStyle openingTitleStyle, openingCaptionStyle, openingButtonStyle;
         private AudioSource introMusic, forestAmbience, restoredTownMusic;
+        private AudioSource gameplayEffects;
+        private AudioClip houseRepairCue, bridgeRepairCue;
 
         private static readonly string[] OpeningTitles =
         {
@@ -148,6 +149,11 @@ namespace MiningTown
             introMusic = CreateSoundtrackSource("Windswept", false);
             forestAmbience = CreateSoundtrackSource("ForestAmbience", true);
             restoredTownMusic = CreateSoundtrackSource("ASmallFireWillDo", true);
+            mineMusic = CreateSoundtrackSource("DeepHumidity", true);
+            gameplayEffects = gameObject.AddComponent<AudioSource>();
+            gameplayEffects.playOnAwake = false;
+            houseRepairCue = Resources.Load<AudioClip>("MiningTownAudio/HouseRepair");
+            bridgeRepairCue = Resources.Load<AudioClip>("MiningTownAudio/BridgeRepair");
             if (openingActive && introMusic != null)
             {
                 introMusic.volume = 0.32f;
@@ -170,6 +176,11 @@ namespace MiningTown
                 if (PrototypeInput.SkipCutscenePressed()) FinishOpening();
                 else if (PrototypeInput.InteractPressed() || Time.unscaledTime - openingStartedAt >= OpeningShotDuration)
                     AdvanceOpening();
+                return;
+            }
+            if (minecartOpen)
+            {
+                if (PrototypeInput.SkipCutscenePressed()) minecartOpen = false;
                 return;
             }
             if (!menuOpen && PrototypeInput.MapPressed())
@@ -224,8 +235,9 @@ namespace MiningTown
 
             bool townRestored = saves.State.bridgeRepaired || saves.State.repairedBuildingIds.Count > 0;
             FadeSoundtrack(introMusic, 0f);
-            FadeSoundtrack(forestAmbience, townRestored ? 0.12f : 0.24f);
-            FadeSoundtrack(restoredTownMusic, townRestored ? 0.30f : 0f);
+            FadeSoundtrack(forestAmbience, minecartOpen ? 0f : townRestored ? 0.12f : 0.24f);
+            FadeSoundtrack(restoredTownMusic, !minecartOpen && townRestored ? 0.30f : 0f);
+            FadeSoundtrack(mineMusic, minecartOpen ? 0.36f : 0f);
         }
 
         private static void FadeSoundtrack(AudioSource source, float targetVolume)
@@ -235,6 +247,11 @@ namespace MiningTown
             if (targetVolume > 0f && !source.isPlaying) source.Play();
             source.volume = Mathf.MoveTowards(source.volume, targetVolume, Time.unscaledDeltaTime * 0.22f);
             if (source.volume == 0f && targetVolume == 0f && source.isPlaying) source.Stop();
+        }
+
+        private void PlayGameplayEffect(AudioClip clip)
+        {
+            if (clip != null) gameplayEffects.PlayOneShot(clip, 0.65f);
         }
 
         private static bool IsOriginalRoad(string objectName)
@@ -381,7 +398,7 @@ namespace MiningTown
                     : "[E] Repair bridge (" + saves.State.wood + " / " + GameRules.BridgeWoodCost + " wood)" };
             }
             if (Distance(WorldLayout.MineX, WorldLayout.MineDoorZ) < best)
-                target = new Target { Kind = "mine", Prompt = "[E] Inspect the sealed mine entrance" };
+                target = new Target { Kind = "mine", Prompt = "[E] Meet the retired miner and play Lucky Minecart" };
             return target;
         }
 
@@ -392,12 +409,19 @@ namespace MiningTown
             switch (target.Kind)
             {
                 case "wood": saves.Collect(target.NodeId); break;
-                case "house": saves.RepairBuilding(target.Id); break;
-                case "bridge": saves.RepairBridge(); break;
+                case "house":
+                    int repairedCount = saves.State.repairedBuildingIds.Count;
+                    saves.RepairBuilding(target.Id);
+                    if (saves.State.repairedBuildingIds.Count > repairedCount) PlayGameplayEffect(houseRepairCue);
+                    break;
+                case "bridge":
+                    bool bridgeWasRepaired = saves.State.bridgeRepaired;
+                    saves.RepairBridge();
+                    if (!bridgeWasRepaired && saves.State.bridgeRepaired) PlayGameplayEffect(bridgeRepairCue);
+                    break;
                 case "mine":
-                    if (saves.State.bridgeRepaired && saves.State.repairedBuildingIds.Contains("miner"))
-                        completedDemoState = saves.State;
-                    saves.ShowMineMessage();
+                    if (saves.State.bridgeRepaired) OpenMinecart();
+                    else saves.ShowMineMessage();
                     break;
             }
         }
@@ -681,11 +705,15 @@ namespace MiningTown
             else
             {
                 Styles();
-                DrawWorldLabels();
-                DrawHud();
-                if (mapOpen) DrawExpandedMap();
-                else if (menuOpen) DrawMenu();
-                if (pendingAction != null) DrawConfirmation();
+                if (minecartOpen) DrawMinecart();
+                else
+                {
+                    DrawWorldLabels();
+                    DrawHud();
+                    if (mapOpen) DrawExpandedMap();
+                    else if (menuOpen) DrawMenu();
+                    if (pendingAction != null) DrawConfirmation();
+                }
             }
             GUI.enabled = true;
             GUI.matrix = oldMatrix;
@@ -745,15 +773,14 @@ namespace MiningTown
         private string DemoObjective()
         {
             SaveData state = saves.State;
-            if (completedDemoState == state)
-                return "Demo complete. The crossing is open. You can keep exploring or save your progress.";
-
             BuildingDefinition minerHouse = WorldLayout.FindBuilding("miner");
             if (!state.repairedBuildingIds.Contains(minerHouse.Id))
                 return "Repair the Old Miner's House near Main Street  ·  " + state.wood + " / " + minerHouse.WoodCost + " wood";
             if (!state.bridgeRepaired)
                 return "Repair the bridge to the northeast  ·  " + state.wood + " / " + GameRules.BridgeWoodCost + " wood";
-            return "Cross the bridge and inspect the sealed mine.";
+            return MinecartDemoComplete
+                ? "Demo complete. Keep exploring or return to the mine to play again."
+                : "Cross the bridge and play Lucky Minecart at the mine entrance.";
         }
 
         private void DrawMenu()
@@ -846,7 +873,7 @@ namespace MiningTown
             }
             Vector2 mine = MiniPoint(map, WorldLayout.MineX, WorldLayout.MineDoorZ + 4);
             Panel(new Rect(mine.x - 5, mine.y - 4, 10, 8), Color.black);
-            if (completedDemoState != saves.State)
+            if (!MinecartDemoComplete)
             {
                 BuildingDefinition minerHouse = WorldLayout.FindBuilding("miner");
                 Vector2 objective = !saves.State.repairedBuildingIds.Contains(minerHouse.Id)
