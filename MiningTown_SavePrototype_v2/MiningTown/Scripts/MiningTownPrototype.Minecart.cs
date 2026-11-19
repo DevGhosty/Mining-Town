@@ -13,7 +13,8 @@ namespace MiningTown
         private readonly int[] cartPrizes = new int[3];
         private readonly AudioClip[] minecartClips = new AudioClip[MinecartCues.Length];
 
-        private AudioSource mineMusic, minecartEffects;
+        private AudioSource mineMusic;
+        private bool minecartClipsLoaded;
         private GUIStyle mineScoreStyle, mineChoiceStyle;
         private SaveData minecartSession;
         private MinecartPhase minecartPhase;
@@ -34,12 +35,11 @@ namespace MiningTown
                 StartMinecartRound();
             }
 
-            if (minecartEffects == null)
+            if (!minecartClipsLoaded)
             {
-                minecartEffects = gameObject.AddComponent<AudioSource>();
-                minecartEffects.playOnAwake = false;
                 for (int i = 0; i < minecartClips.Length; i++)
                     minecartClips[i] = Resources.Load<AudioClip>("MiningTownAudio/" + MinecartCues[i]);
+                minecartClipsLoaded = true;
             }
 
             minecartOpen = true;
@@ -93,8 +93,7 @@ namespace MiningTown
 
         private void PlayMinecartCue(int index)
         {
-            if (minecartClips[index] != null)
-                minecartEffects.PlayOneShot(minecartClips[index], 0.65f);
+            PlayGameplayEffect(minecartClips[index]);
         }
 
         private void DrawMinecart()

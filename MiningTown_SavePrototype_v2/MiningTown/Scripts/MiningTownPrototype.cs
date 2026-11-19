@@ -41,6 +41,8 @@ namespace MiningTown
         private bool openingActive;
         private GUIStyle openingTitleStyle, openingCaptionStyle, openingButtonStyle;
         private AudioSource introMusic, forestAmbience, restoredTownMusic;
+        private AudioSource gameplayEffects;
+        private AudioClip houseRepairCue, bridgeRepairCue;
 
         private static readonly string[] OpeningTitles =
         {
@@ -148,6 +150,10 @@ namespace MiningTown
             forestAmbience = CreateSoundtrackSource("ForestAmbience", true);
             restoredTownMusic = CreateSoundtrackSource("ASmallFireWillDo", true);
             mineMusic = CreateSoundtrackSource("DeepHumidity", true);
+            gameplayEffects = gameObject.AddComponent<AudioSource>();
+            gameplayEffects.playOnAwake = false;
+            houseRepairCue = Resources.Load<AudioClip>("MiningTownAudio/HouseRepair");
+            bridgeRepairCue = Resources.Load<AudioClip>("MiningTownAudio/BridgeRepair");
             if (openingActive && introMusic != null)
             {
                 introMusic.volume = 0.32f;
@@ -241,6 +247,11 @@ namespace MiningTown
             if (targetVolume > 0f && !source.isPlaying) source.Play();
             source.volume = Mathf.MoveTowards(source.volume, targetVolume, Time.unscaledDeltaTime * 0.22f);
             if (source.volume == 0f && targetVolume == 0f && source.isPlaying) source.Stop();
+        }
+
+        private void PlayGameplayEffect(AudioClip clip)
+        {
+            if (clip != null) gameplayEffects.PlayOneShot(clip, 0.65f);
         }
 
         private static bool IsOriginalRoad(string objectName)
@@ -398,8 +409,16 @@ namespace MiningTown
             switch (target.Kind)
             {
                 case "wood": saves.Collect(target.NodeId); break;
-                case "house": saves.RepairBuilding(target.Id); break;
-                case "bridge": saves.RepairBridge(); break;
+                case "house":
+                    int repairedCount = saves.State.repairedBuildingIds.Count;
+                    saves.RepairBuilding(target.Id);
+                    if (saves.State.repairedBuildingIds.Count > repairedCount) PlayGameplayEffect(houseRepairCue);
+                    break;
+                case "bridge":
+                    bool bridgeWasRepaired = saves.State.bridgeRepaired;
+                    saves.RepairBridge();
+                    if (!bridgeWasRepaired && saves.State.bridgeRepaired) PlayGameplayEffect(bridgeRepairCue);
+                    break;
                 case "mine":
                     if (saves.State.bridgeRepaired) OpenMinecart();
                     else saves.ShowMineMessage();
