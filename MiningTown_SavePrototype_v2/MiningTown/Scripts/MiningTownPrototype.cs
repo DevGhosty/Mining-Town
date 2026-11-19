@@ -40,6 +40,7 @@ namespace MiningTown
         private int openingShot;
         private bool openingActive;
         private GUIStyle openingTitleStyle, openingCaptionStyle, openingButtonStyle;
+        private AudioSource introMusic, forestAmbience, restoredTownMusic;
 
         private static readonly string[] OpeningTitles =
         {
@@ -143,10 +144,19 @@ namespace MiningTown
                 openingActive = true;
                 FrameOpening();
             }
+            introMusic = CreateSoundtrackSource("Windswept", false);
+            forestAmbience = CreateSoundtrackSource("ForestAmbience", true);
+            restoredTownMusic = CreateSoundtrackSource("ASmallFireWillDo", true);
+            if (openingActive && introMusic != null)
+            {
+                introMusic.volume = 0.32f;
+                introMusic.Play();
+            }
         }
 
         private void Update()
         {
+            UpdateSoundtrack();
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
             Vector2 screenPoint;
             pointerReleased = PrototypeInput.PointerReleased(out screenPoint);
@@ -182,6 +192,38 @@ namespace MiningTown
             }
             player.position = StatePosition();
             if (PrototypeInput.InteractPressed()) Interact();
+        }
+
+        private AudioSource CreateSoundtrackSource(string clipName, bool loop)
+        {
+            var clip = Resources.Load<AudioClip>("MiningTownAudio/" + clipName);
+            if (clip == null) return null;
+
+            var source = gameObject.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.clip = clip;
+            source.loop = loop;
+            source.volume = 0f;
+            return source;
+        }
+
+        private void UpdateSoundtrack()
+        {
+            if (openingActive) return;
+
+            bool townRestored = saves.State.bridgeRepaired || saves.State.repairedBuildingIds.Count > 0;
+            FadeSoundtrack(introMusic, 0f);
+            FadeSoundtrack(forestAmbience, townRestored ? 0.12f : 0.24f);
+            FadeSoundtrack(restoredTownMusic, townRestored ? 0.30f : 0f);
+        }
+
+        private static void FadeSoundtrack(AudioSource source, float targetVolume)
+        {
+            if (source == null) return;
+
+            if (targetVolume > 0f && !source.isPlaying) source.Play();
+            source.volume = Mathf.MoveTowards(source.volume, targetVolume, Time.unscaledDeltaTime * 0.22f);
+            if (source.volume == 0f && targetVolume == 0f && source.isPlaying) source.Stop();
         }
 
         private static bool IsOriginalRoad(string objectName)
