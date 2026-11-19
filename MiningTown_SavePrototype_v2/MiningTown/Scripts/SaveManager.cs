@@ -23,7 +23,7 @@ namespace MiningTown
             State = SaveData.NewGame();
             Status = File.Exists(SavePath) || File.Exists(repository.BackupPath)
                 ? "A save exists. Press M, then Load to continue."
-                : "Collect wood to restore the town. The bridge lies to the north-east.";
+                : "Walk up to a gold wood bundle and press E to gather it.";
             Debug.Log("Mining Town save file: " + SavePath);
         }
 

@@ -27,7 +27,7 @@ namespace MiningTown
         [SerializeField, HideInInspector] private GameObject brokenBridge, fixedBridge;
         private Material timber, slate, gold, cream, foliage, stone, damagedWall;
         private GUIStyle titleStyle, headingStyle, textStyle, smallStyle, buttonStyle, tagStyle;
-        private Font uiFont;
+        private SaveData completedDemoState;
         private bool menuOpen;
         private Vector2 pointer;
         private bool pointerReleased;
@@ -337,7 +337,7 @@ namespace MiningTown
 
         private Target NearestTarget()
         {
-            Target target = new Target { Kind = "", Prompt = "Explore the town. The bridge is to the north-east." };
+            Target target = new Target { Kind = "", Prompt = "" };
             float best = 2.1f;
             for (int i = 0; i < WorldLayout.Resources.Length; i++)
             {
@@ -357,7 +357,7 @@ namespace MiningTown
                 best = distance;
                 string prompt = !house.CanRepair ? "[E] Inspect the abandoned ruins"
                     : saves.State.repairedBuildingIds.Contains(house.Id) ? house.Name + " is restored."
-                    : "[E] Repair " + house.Name + " (" + house.WoodCost + " wood / +20 Honor)";
+                    : "[E] Repair " + house.Name + " (" + saves.State.wood + " / " + house.WoodCost + " wood)";
                 target = new Target { Kind = "house", Id = house.Id, Prompt = prompt };
             }
             float bridgeDistance = Mathf.Min(Distance(WorldLayout.BridgeX, WorldLayout.BridgeApproachZ),
@@ -366,7 +366,8 @@ namespace MiningTown
             {
                 best = bridgeDistance;
                 target = new Target { Kind = "bridge", Prompt = saves.State.bridgeRepaired
-                    ? "Bridge restored. You can cross the river." : "[E] Repair bridge (12 wood / +20 Honor)" };
+                    ? "Bridge restored. You can cross the river."
+                    : "[E] Repair bridge (" + saves.State.wood + " / " + GameRules.BridgeWoodCost + " wood)" };
             }
             if (Distance(WorldLayout.MineX, WorldLayout.MineDoorZ) < best)
                 target = new Target { Kind = "mine", Prompt = "[E] Inspect the sealed mine entrance" };
@@ -382,7 +383,11 @@ namespace MiningTown
                 case "wood": saves.Collect(target.NodeId); break;
                 case "house": saves.RepairBuilding(target.Id); break;
                 case "bridge": saves.RepairBridge(); break;
-                case "mine": saves.ShowMineMessage(); break;
+                case "mine":
+                    if (saves.State.bridgeRepaired && saves.State.repairedBuildingIds.Contains("miner"))
+                        completedDemoState = saves.State;
+                    saves.ShowMineMessage();
+                    break;
             }
         }
 
@@ -618,14 +623,12 @@ namespace MiningTown
         private void Styles()
         {
             if (titleStyle != null) return;
-            uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Microsoft YaHei", "Microsoft JhengHei", "Noto Sans CJK SC", "PingFang SC", "Arial Unicode MS", "Arial" }, 16);
             titleStyle = LabelStyle(25, true);
             headingStyle = LabelStyle(17, true);
             textStyle = LabelStyle(16, false);
             smallStyle = LabelStyle(13, false);
             tagStyle = LabelStyle(13, true); tagStyle.alignment = TextAnchor.MiddleCenter;
             buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 16, wordWrap = true };
-            if (uiFont != null) buttonStyle.font = uiFont;
             titleStyle.normal.textColor = new Color(0.97f, 0.75f, 0.38f);
             smallStyle.normal.textColor = new Color(0.75f, 0.82f, 0.79f);
         }
@@ -634,7 +637,6 @@ namespace MiningTown
         {
             var style = new GUIStyle(GUI.skin.label) { fontSize = size, wordWrap = true,
                 fontStyle = bold ? FontStyle.Bold : FontStyle.Normal };
-            if (uiFont != null) style.font = uiFont;
             style.normal.textColor = new Color(0.93f, 0.94f, 0.90f);
             return style;
         }
@@ -709,17 +711,32 @@ namespace MiningTown
             GUI.Label(new Rect(36, 98, 305, 24), "Houses " + saves.State.repairedBuildingIds.Count + "/4    Bridge: "
                 + (saves.State.bridgeRepaired ? "OPEN" : "BROKEN"), smallStyle);
             Panel(new Rect(370, 20, 640, 50), new Color(0.07f, 0.13f, 0.15f, 0.94f));
-            GUI.Label(new Rect(388, 33, 610, 30), "WASD / Arrows: move    E: interact    M: open / close menu", textStyle);
+            GUI.Label(new Rect(388, 31, 610, 32), "Move  WASD / Arrows     Interact  E     Menu  M", textStyle);
             GUI.enabled = pendingAction == null;
             if (Button(new Rect(840, 82, 170, 36), menuOpen ? "Close Menu [M]" : "Menu [M]")) menuOpen = !menuOpen;
             DrawMiniMap();
-            Panel(new Rect(20, 608, 1240, 92), new Color(0.07f, 0.13f, 0.15f, 0.96f));
+            Panel(new Rect(20, 575, 1240, 125), new Color(0.07f, 0.13f, 0.15f, 0.96f));
+            GUI.Label(new Rect(38, 585, 1190, 28), DemoObjective(), headingStyle);
             Target target = NearestTarget();
-            GUI.Label(new Rect(38, 620, 1035, 29), target.Prompt, headingStyle);
+            GUI.Label(new Rect(38, 618, 1035, 30), target.Prompt, textStyle);
             GUI.enabled = !menuOpen && pendingAction == null;
             if (!String.IsNullOrEmpty(target.Kind) && Button(new Rect(1094, 619, 144, 33), "Interact [E]")) Interact();
-            GUI.Label(new Rect(38, 660, 1190, 30), saves.Status, textStyle);
+            GUI.Label(new Rect(38, 654, 1190, 40), saves.Status, smallStyle);
             GUI.enabled = true;
+        }
+
+        private string DemoObjective()
+        {
+            SaveData state = saves.State;
+            if (completedDemoState == state)
+                return "Demo complete. The crossing is open. You can keep exploring or save your progress.";
+
+            BuildingDefinition minerHouse = WorldLayout.FindBuilding("miner");
+            if (!state.repairedBuildingIds.Contains(minerHouse.Id))
+                return "Repair the Old Miner's House near Main Street  ·  " + state.wood + " / " + minerHouse.WoodCost + " wood";
+            if (!state.bridgeRepaired)
+                return "Repair the bridge to the northeast  ·  " + state.wood + " / " + GameRules.BridgeWoodCost + " wood";
+            return "Cross the bridge and inspect the sealed mine.";
         }
 
         private void DrawMenu()
@@ -744,7 +761,7 @@ namespace MiningTown
             Panel(new Rect(0, 0, 1280, 720), new Color(0, 0, 0, 0.55f));
             Panel(new Rect(430, 250, 620, 210), new Color(0.10f, 0.17f, 0.19f));
             GUI.Label(new Rect(456, 272, 565, 35), pendingTitle, headingStyle);
-            GUI.Label(new Rect(456, 315, 565, 55), "This replaces the current session. Your local save file stays unchanged until you click Save.", textStyle);
+            GUI.Label(new Rect(456, 308, 565, 70), "This replaces the current session. Your local save file stays unchanged until you click Save.", textStyle);
             if (Button(new Rect(456, 397, 260, 38), "Continue"))
             { Action action = pendingAction; pendingAction = null; action(); }
             if (Button(new Rect(742, 397, 280, 38), "Cancel")) pendingAction = null;
@@ -767,15 +784,16 @@ namespace MiningTown
             Vector3 point = sceneCamera.WorldToScreenPoint(worldPosition);
             float x = point.x * 1280f / Screen.width;
             float y = (Screen.height - point.y) * 720f / Screen.height;
-            if (point.z < 0 || x < 120 || x > 1160 || y < 145 || y > 570) return;
-            Rect rect = new Rect(x - 125, y - 15, 250, 30);
+            if (point.z < 0 || x < 130 || x > 1150 || y < 145 || y > 555) return;
+            float width = tagStyle.CalcSize(new GUIContent(caption)).x + 16;
+            Rect rect = new Rect(Mathf.Clamp(x - width / 2f, 20, 1260 - width), y - 15, width, 30);
             Panel(rect, new Color(0.07f, 0.13f, 0.15f, 0.82f));
             GUI.Label(rect, caption, tagStyle);
         }
 
         private void DrawMiniMap()
         {
-            Rect box = new Rect(1030, 20, 230, 208);
+            Rect box = new Rect(1030, 20, 230, 232);
             Panel(box, new Color(0.07f, 0.13f, 0.15f, 0.96f));
             GUI.Label(new Rect(1042, 26, 210, 24), "TOWN MAP                 N", smallStyle);
             Rect map = new Rect(1044, 56, 202, 144);
@@ -801,9 +819,21 @@ namespace MiningTown
             }
             Vector2 mine = MiniPoint(map, WorldLayout.MineX, WorldLayout.MineDoorZ + 4);
             Panel(new Rect(mine.x - 5, mine.y - 4, 10, 8), Color.black);
+            if (completedDemoState != saves.State)
+            {
+                BuildingDefinition minerHouse = WorldLayout.FindBuilding("miner");
+                Vector2 objective = !saves.State.repairedBuildingIds.Contains(minerHouse.Id)
+                    ? MiniPoint(map, minerHouse.X, minerHouse.Z)
+                    : saves.State.bridgeRepaired ? mine : bridge;
+                Color marker = new Color(0.45f, 0.95f, 0.93f);
+                Panel(new Rect(objective.x - 7, objective.y - 7, 14, 2), marker);
+                Panel(new Rect(objective.x - 7, objective.y + 5, 14, 2), marker);
+                Panel(new Rect(objective.x - 7, objective.y - 5, 2, 10), marker);
+                Panel(new Rect(objective.x + 5, objective.y - 5, 2, 10), marker);
+            }
             Vector2 playerPoint = MiniPoint(map, player.position.x, player.position.z);
             Panel(new Rect(playerPoint.x - 3, playerPoint.y - 3, 6, 6), Color.white);
-            GUI.Label(new Rect(1042, 202, 210, 22), "White: you   Gold: wood", smallStyle);
+            GUI.Label(new Rect(1042, 202, 210, 42), "White: you   Gold dots: wood\nTeal outline: objective", smallStyle);
         }
 
         private Vector2 MiniPoint(Rect map, float x, float z)
@@ -823,7 +853,6 @@ namespace MiningTown
             if (saves != null) { saves.StateChanged -= RefreshWorld; WorldLayout.ResetLayout(); }
             if (!Application.isPlaying) return;
             foreach (Material material in materials) if (material != null) Destroy(material);
-            if (uiFont != null) Destroy(uiFont);
         }
     }
 }

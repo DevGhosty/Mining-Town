@@ -13,7 +13,7 @@ namespace MiningTown
         public const int BridgeWoodCost = 12;
         public const int BridgeHonorReward = 20;
         public const int RepairableHouseCount = 4;
-        public const string MineMessage = "Mine unavailable for now.";
+        public const string MineMessage = "The old mine is boarded up. The repaired crossing gives the town a way back here when it is ready.";
 
         public static bool TryCollect(SaveData state, int nodeId, out string message)
         {
